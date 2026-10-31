@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Company Policy Assistant — Method Comparison</title>
+<style>
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#eaf1fa;background:#0c1524;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0}main{max-width:1200px;margin:auto;padding:48px 24px}
+h1{font-size:clamp(2rem,5vw,3.4rem);margin:8px 0}h2{font-size:1.23rem}
+p{line-height:1.6;color:#c0cbdb}.eyebrow{color:#8bdfba;font-size:.8rem;letter-spacing:.15em;font-weight:700}
+.panel,.card{background:#152238;border:1px solid #33435b;border-radius:16px;padding:24px;margin:18px 0}
+label{display:block;font-weight:700;margin-bottom:12px}input{background:#0b1628;color:#fff;border:1px solid #536984;border-radius:8px;font-size:16px;padding:14px;width:100%}
+button{margin-top:14px;border:0;border-radius:8px;background:#a1e5c4;color:#10201a;font-weight:700;font-size:15px;padding:12px 20px;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.card{margin:0;min-width:0;overflow-wrap:anywhere}.answer{min-height:120px;white-space:pre-wrap}.metric{display:flex;justify-content:space-between;gap:15px;border-top:1px solid #32415a;padding:12px 0;font-size:.88rem}
+.metric span{color:#bac8d9}.metric strong{text-align:right}.muted{font-size:.87rem;color:#a7b7ca}a{color:#a1e5c4}
+@media(max-width:800px){.grid{grid-template-columns:1fr}main{padding:25px 16px}.answer{min-height:0}}
+</style>
+</head>
+<body><main>
+<header><div class="eyebrow">AI IN ACCOUNTING · ASSIGNMENT</div>
+<h1>Company Policy Assistant</h1>
+<p>Compare keyword-based retrieval, a language model with the full policy database, and a language model assisted by semantic vector search.</p></header>
+<section class="panel"><label for="question">Ask a policy question</label>
+<input id="question" maxlength="1000" value="What is the warranty period for products?">
+<button id="run">Compare three approaches</button>
+<p class="muted" id="status" role="status">The rules-based method works in your browser. Actual LLM answers require the local Ollama backend on this computer; this page never fabricates model responses or benchmarks.</p>
+</section>
+<section class="grid" id="cards" aria-live="polite"></section>
+<section class="panel">
+<h2>Comparison and preferred approach</h2>
+<p>Rules-based keyword search is fast, transparent and requires zero language-model tokens, but it often misses differently worded questions and may return an irrelevant result when common terms overlap. An LLM without vector indexing can reason over all supplied policies, though its full-database prompt has a larger token cost and can still invent unsupported information. An LLM with a vector index first retrieves semantically similar records and then answers using only those records, usually reducing generation prompt size but introducing embedding and retrieval overhead as well as a risk that a relevant policy is not retrieved.</p>
+<p>The preferred approach is an LLM with vector-based retrieval and explicit policy citations, subject to testing its retrieval accuracy and checking responses against original source texts. All three approaches must be evaluated using the same questions, with response times and language-model token counts measured from real execution. For unsupported-answer tendency, a human reviewer should label whether each answer is fully supported, partially supported or unsupported by the policy database; the interface does not present guessed hallucination scores. For sensitive company decisions the original policy text remains authoritative.</p>
+<p class="muted">Dataset: 98 company policies. Local comparison backend: FastAPI and Ollama. Slack integration: Socket Mode. The first vector query includes an index-build cost; compare later warmed queries separately.</p></section>
+</main>
+<script>
+const cards=document.getElementById('cards'),status=document.getElementById('status'),run=document.getElementById('run');
+const methods=[['rules','Rules-based search'],['llm_no_vector','LLM without vector index'],['llm_vector','LLM with vector index']];
+let policies=[];
+const stop=new Set('a an the is are was were do does can i we you for to of and or in on at with what how much long many policy company employees employee our about please tell me'.split(' '));
+const words=s=>(s.toLowerCase().match(/[a-z0-9]+/g)||[]).filter(w=>!stop.has(w));
+function csvParse(str){const rows=[];let row=[],cell='',quoted=false;for(let i=0;i<str.length;i++){let c=str[i];if(c==='"'){if(quoted&&str[i+1]==='"'){cell+='"';i++}else quoted=!quoted}else if(c===','&&!quoted){row.push(cell);cell=''}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&str[i+1]==='\n')i++;row.push(cell);if(row.some(v=>v.length))rows.push(row);row=[];cell=''}else cell+=c}if(cell||row.length){row.push(cell);rows.push(row)}const headers=rows.shift()||[];return rows.map(r=>Object.fromEntries(headers.map((h,i)=>[h,r[i]||''])));}
+function ruleAnswer(q){const t0=performance.now(),tokens=words(q);const matches=policies.map(p=>{const title=words(p.title),body=words(p.policy_text+' '+p.category+' '+p.department);return {p,score:tokens.reduce((s,w)=>s+(title.includes(w)?4:0)+(body.includes(w)?1:0),0)}}).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+const p=matches[0]?.p;return {method:'rules',answer:p?.policy_text||'No matching policy found.',policy:p?.title||'None',tokens:0,time_ms:+(performance.now()-t0).toFixed(1)}}
+function display(results){cards.replaceChildren();for(const [key,name] of methods){const x=results.find(r=>r.method===key)||{};const article=document.createElement('article');article.className='card';const h=document.createElement('h2');h.textContent=name;article.append(h);const a=document.createElement('p');a.className='answer';a.textContent=x.error?'Unavailable: '+x.error:x.answer||'Not measured. Start the local backend to run this approach.';article.append(a);
+for(const [label,value] of [['Relevant policy',x.policy??'Not measured'],['Response time',x.time_ms===undefined?'Not measured':x.time_ms+' ms'],['LLM tokens',x.tokens===undefined?'Not measured':x.tokens],['Unsupported-answer tendency','Requires manual source review']]){const row=document.createElement('div');row.className='metric';const l=document.createElement('span');l.textContent=label;const v=document.createElement('strong');v.textContent=String(value);row.append(l,v);article.append(row)}cards.append(article)}}
+display([]);
+fetch('./data/company_policies.csv').then(r=>{if(!r.ok)throw Error('Policy CSV unavailable');return r.text()}).then(t=>{policies=csvParse(t);status.textContent='Loaded '+policies.length+' policies. Rules-based search is available; LLM results require local Ollama and FastAPI.'}).catch(e=>status.textContent='Could not load policy CSV: '+e.message);
+async function compare(){const q=document.getElementById('question').value.trim();if(!q||!policies.length)return;run.disabled=true;status.textContent='Searching policies and checking for a local model backend…';const local=ruleAnswer(q);display([local]);try{const response=await fetch('http://127.0.0.1:8000/compare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q}),signal:AbortSignal.timeout(240000)});if(!response.ok)throw Error('HTTP '+response.status);const data=await response.json();display(data.results||[local]);status.textContent='Measured results from your local backend. Check each answer against the policy records.'}catch(e){status.textContent='Showing only browser-based keyword search. Local AI backend unavailable ('+e.message+'). Ollama methods are not simulated.'}finally{run.disabled=false}}
+run.addEventListener('click',compare);document.getElementById('question').addEventListener('keydown',e=>{if(e.key==='Enter')compare()});
+</script></body></html>
